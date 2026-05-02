@@ -8,176 +8,196 @@
 <style>
 body{margin:0;background:#000;color:#fff;font-family:-apple-system;}
 .header{display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #222;}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px;}
-.btn{background:#111;padding:10px;text-align:center;border-radius:10px;}
-.item{padding:10px;border-bottom:1px solid #222;}
-input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;}
-canvas{max-width:300px;margin:10px auto;display:block;}
+.btn{padding:10px;margin:5px;background:#111;border-radius:8px;}
+.item{border-bottom:1px solid #333;padding:10px;}
+input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;border:1px solid #333;}
+canvas{display:block;margin:10px auto;}
 </style>
 </head>
 
 <body>
 
 <div class="header">
-<span id="dateLabel"></span>
-<div>
-<button onclick="prevDay()">◀</button>
-<button onclick="nextDay()">▶</button>
-<button onclick="share()">共有</button>
-<button onclick="chart()">📊</button>
-</div>
+  <span id="dateLabel"></span>
+  <div>
+    <button onclick="prevDay()">◀</button>
+    <button onclick="nextDay()">▶</button>
+    <button onclick="share()">共有</button>
+    <button onclick="drawChart()">📊</button>
+  </div>
 </div>
 
-<div class="grid" id="buttons"></div>
+<div>
+  <button class="btn" onclick="startLog('仕事','💼')">💼仕事</button>
+  <button class="btn" onclick="startLog('食事','🍽️')">🍽️食事</button>
+</div>
+
 <div id="list"></div>
-<canvas id="chartCanvas" width="300" height="300"></canvas>
+
+<canvas id="chart" width="300" height="300"></canvas>
 
 <script>
 
 // ▼データ
-let logs=JSON.parse(localStorage.getItem("logs")||"[]");
-let cats=[{name:"仕事",icon:"💼"},{name:"食事",icon:"🍽️"}];
-let current=new Date();
+let logs = JSON.parse(localStorage.getItem("logs") || "[]");
+let currentDate = new Date();
 
 // ▼保存
-function save(){localStorage.setItem("logs",JSON.stringify(logs));}
-
-// ▼日付
-function dstr(d){return d.toISOString().slice(0,10);}
-
-// ▼時間
-function dur(s,e){
- if(!e)return "";
- let m=Math.ceil((new Date(e)-new Date(s))/60000);
- let h=Math.floor(m/60),mm=m%60;
- return h?`（${h}時間${mm}分）`:`（${mm}分）`;
+function save(){
+  localStorage.setItem("logs", JSON.stringify(logs));
 }
 
-// ▼ログ
-function start(c){
- logs.unshift({id:Date.now(),title:c.name,icon:c.icon,start:new Date().toISOString(),end:null,memo:"",img:""});
- save();render();
-}
-function end(id){
- let l=logs.find(x=>x.id===id);
- l.end=new Date().toISOString();
- save();render();
+// ▼日付フォーマット
+function formatJP(date){
+  let d = new Date(date);
+  let w = ["日","月","火","水","木","金","土"][d.getDay()];
+  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}(${w})`;
 }
 
-// ▼時間編集（修正）
-function edit(id){
- let l=logs.find(x=>x.id===id);
-
- let s=prompt("開始 YYYY-MM-DDTHH:MM",l.start);
- let e=prompt("終了 YYYY-MM-DDTHH:MM",l.end||"");
-
- if(!s||!e)return;
-
- if(new Date(e)<new Date(s)){
-  alert("時間逆転");
-  return;
- }
-
- l.start=s;
- l.end=e;
- save();render();
+// ▼時間フォーマット
+function formatTime(date){
+  let d = new Date(date);
+  return `${formatJP(date)} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 }
 
-// ▼日付
-function prevDay(){current.setDate(current.getDate()-1);render();}
-function nextDay(){current.setDate(current.getDate()+1);render();}
+// ▼日付キー
+function dateKey(d){
+  return new Date(d).toISOString().slice(0,10);
+}
 
-// ▼共有（確実動作）
+// ▼所要時間
+function duration(s,e){
+  if(!e) return "";
+  let m = Math.ceil((new Date(e)-new Date(s))/60000);
+  let h = Math.floor(m/60);
+  let mm = m%60;
+  return h ? `${h}時間${mm}分` : `${mm}分`;
+}
+
+// ▼ログ開始
+function startLog(title,icon){
+  logs.unshift({
+    id: Date.now(),
+    title,
+    icon,
+    start: new Date().toISOString(),
+    end: null,
+    memo:""
+  });
+  save();
+  render();
+}
+
+// ▼終了
+function endLog(id){
+  let l = logs.find(x=>x.id===id);
+  l.end = new Date().toISOString();
+  save();
+  render();
+}
+
+// ▼日付移動
+function prevDay(){
+  currentDate.setDate(currentDate.getDate()-1);
+  render();
+}
+function nextDay(){
+  currentDate.setDate(currentDate.getDate()+1);
+  render();
+}
+
+// ▼共有（Evernote用）
 function share(){
- let txt=dstr(current)+"のログ\n\n";
- logs.filter(l=>l.start.slice(0,10)===dstr(current)).forEach(l=>{
-  txt+=`${l.icon} ${l.title}\n${dur(l.start,l.end)}\n${l.memo||""}\n\n`;
- });
+  let title = formatJP(currentDate) + "のログ";
+  let text = title + "\n\n";
 
- navigator.clipboard.writeText(txt)
- .then(()=>alert("コピーしました"))
- .catch(()=>prompt("コピーしてください",txt));
+  logs.filter(l=>dateKey(l.start)===dateKey(currentDate))
+  .forEach(l=>{
+    text += `${l.icon} ${l.title}\n`;
+    text += `${formatTime(l.start)} ～ ${l.end ? formatTime(l.end):""}\n`;
+    text += `${l.end ? "（"+duration(l.start,l.end)+"）":""}\n`;
+    text += `${l.memo||""}\n\n`;
+  });
+
+  if(navigator.share){
+    navigator.share({
+      title: title,
+      text: text
+    });
+  }else{
+    prompt("コピーして使う", text);
+  }
 }
 
-// ▼画像（修正）
-function imgUpload(id,input){
- let f=input.files[0];
- if(!f)return;
- let r=new FileReader();
- r.onload=e=>{
-  let l=logs.find(x=>x.id===id);
-  l.img=e.target.result;
-  save();render();
- };
- r.readAsDataURL(f);
+// ▼メモ
+function saveMemo(id,val){
+  let l = logs.find(x=>x.id===id);
+  l.memo = val;
+  save();
 }
 
-// ▼グラフ（修正）
-function chart(){
- let ctx=chartCanvas.getContext("2d");
- ctx.clearRect(0,0,300,300);
+// ▼グラフ
+function drawChart(){
+  let ctx = document.getElementById("chart").getContext("2d");
+  ctx.clearRect(0,0,300,300);
 
- let map={};
- logs.filter(l=>l.end && l.start.slice(0,10)===dstr(current)).forEach(l=>{
-  let m=Math.ceil((new Date(l.end)-new Date(l.start))/60000);
-  map[l.title]=(map[l.title]||0)+m;
- });
+  let map = {};
 
- let total=Object.values(map).reduce((a,b)=>a+b,0);
- if(!total)return;
+  logs.filter(l=>l.end && dateKey(l.start)===dateKey(currentDate))
+  .forEach(l=>{
+    let m = Math.ceil((new Date(l.end)-new Date(l.start))/60000);
+    map[l.title] = (map[l.title]||0)+m;
+  });
 
- let start=0;
- Object.keys(map).forEach(k=>{
-  let val=map[k]/total*2*Math.PI;
-  ctx.beginPath();
-  ctx.moveTo(150,150);
-  ctx.arc(150,150,100,start,start+val);
-  ctx.fillStyle="#"+Math.floor(Math.random()*16777215).toString(16);
-  ctx.fill();
-  start+=val;
- });
+  let total = Object.values(map).reduce((a,b)=>a+b,0);
+  if(total===0) return;
+
+  let colors = ["#ff6384","#36a2eb","#ffce56","#4bc0c0","#9966ff"];
+  let start = 0;
+  let i = 0;
+
+  Object.keys(map).forEach(k=>{
+    let val = map[k]/total * 2*Math.PI;
+
+    ctx.beginPath();
+    ctx.moveTo(150,150);
+    ctx.arc(150,150,100,start,start+val);
+    ctx.fillStyle = colors[i%colors.length];
+    ctx.fill();
+
+    start += val;
+    i++;
+  });
 }
 
 // ▼描画
 function render(){
- dateLabel.innerText=dstr(current);
+  document.getElementById("dateLabel").innerText = formatJP(currentDate);
 
- buttons.innerHTML="";
- cats.forEach(c=>{
-  let el=document.createElement("div");
-  el.className="btn";
-  el.innerHTML=`${c.icon}<br>${c.name}`;
-  el.onclick=()=>start(c);
-  buttons.appendChild(el);
- });
+  let list = document.getElementById("list");
+  list.innerHTML = "";
 
- list.innerHTML="";
- logs.filter(l=>l.start.slice(0,10)===dstr(current)).forEach(l=>{
-  let el=document.createElement("div");
-  el.className="item";
+  logs.filter(l=>dateKey(l.start)===dateKey(currentDate))
+  .forEach(l=>{
+    let el = document.createElement("div");
+    el.className="item";
 
-  el.innerHTML=`
-   ${l.icon} ${l.title}<br>
-   ${dur(l.start,l.end)}
-   <br><button onclick="end(${l.id})">終了</button>
-   <button onclick="edit(${l.id})">時間編集</button>
-   <textarea onchange="memo(${l.id},this.value)">${l.memo||""}</textarea>
-   <input type="file" accept="image/*" onchange="imgUpload(${l.id},this)">
-   ${l.img?`<img src="${l.img}" width="100%">`:""}
-  `;
+    el.innerHTML = `
+      ${l.icon} ${l.title}<br>
+      ${formatTime(l.start)} ～ ${l.end ? formatTime(l.end):""}<br>
+      ${l.end ? "（"+duration(l.start,l.end)+"）":""}
+      <br>
+      <button onclick="endLog(${l.id})">終了</button>
+      <textarea onchange="saveMemo(${l.id},this.value)" placeholder="メモ">${l.memo||""}</textarea>
+    `;
 
-  list.appendChild(el);
- });
-}
-
-function memo(id,val){
- let l=logs.find(x=>x.id===id);
- l.memo=val;
- save();
+    list.appendChild(el);
+  });
 }
 
 render();
 
 </script>
+
 </body>
 </html>
