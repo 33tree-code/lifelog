@@ -11,10 +11,10 @@ body{margin:0;background:#000;color:#fff;font-family:-apple-system;}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px;}
 .btn{background:#111;padding:10px;text-align:center;border-radius:10px;}
 .item{padding:10px;border-bottom:1px solid #222;}
-input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;border:1px solid #333;}
-canvas{max-width:300px;margin:10px;}
+input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;}
+canvas{max-width:300px;margin:10px auto;display:block;}
 .calendar{display:grid;grid-template-columns:repeat(7,1fr);}
-.day{padding:5px;text-align:center;background:#111;margin:2px;}
+.day{padding:6px;text-align:center;background:#111;margin:2px;}
 </style>
 </head>
 
@@ -23,10 +23,10 @@ canvas{max-width:300px;margin:10px;}
 <div class="header">
   <span id="dateLabel"></span>
   <div>
-    <button onclick="prevMonth()">◀</button>
-    <button onclick="nextMonth()">▶</button>
+    <button onclick="prevDay()">◀</button>
+    <button onclick="nextDay()">▶</button>
+    <button onclick="exportEvernote()">共有</button>
     <button onclick="openChart()">📊</button>
-    <button onclick="openSettings()">⚙️</button>
   </div>
 </div>
 
@@ -39,20 +39,20 @@ canvas{max-width:300px;margin:10px;}
 <script>
 
 // ▼データ
-let logs = JSON.parse(localStorage.getItem("logs")||"[]");
-let categories = JSON.parse(localStorage.getItem("cats")||'[{"name":"仕事","icon":"💼"},{"name":"食事","icon":"🍽️"}]');
-let currentDate = new Date();
-let viewMonth = new Date();
+let logs=JSON.parse(localStorage.getItem("logs")||"[]");
+let cats=JSON.parse(localStorage.getItem("cats")||'[{"name":"仕事","icon":"💼"},{"name":"食事","icon":"🍽️"}]');
+let current=new Date();
 
 // ▼保存
 function save(){
  localStorage.setItem("logs",JSON.stringify(logs));
- localStorage.setItem("cats",JSON.stringify(categories));
+ localStorage.setItem("cats",JSON.stringify(cats));
 }
 
 // ▼日付
-function formatDate(d){
- return d.toISOString().slice(0,10);
+function fmtDate(d){
+ let w=["日","月","火","水","木","金","土"][d.getDay()];
+ return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}(${w})`;
 }
 
 // ▼時間
@@ -61,12 +61,12 @@ function duration(s,e){
  let m=Math.ceil((new Date(e)-new Date(s))/60000);
  let h=Math.floor(m/60);
  let mm=m%60;
- return h>0?`（${h}時間${mm}分）`:`（${mm}分）`;
+ return h?`（${h}時間${mm}分）`:`（${mm}分）`;
 }
 
 // ▼ログ
 function startLog(c){
- logs.unshift({id:Date.now(),title:c.name,icon:c.icon,startAt:new Date().toISOString(),endAt:null,memo:"",img:""});
+ logs.unshift({id:Date.now(),title:c.name,icon:c.icon,startAt:new Date().toISOString(),endAt:null,memo:""});
  save();render();
 }
 function endLog(id){
@@ -75,53 +75,37 @@ function endLog(id){
  save();render();
 }
 
-// ▼時間編集
-function editTime(id){
- let l=logs.find(x=>x.id===id);
- let s=prompt("開始(例:2026-05-02T10:00)",l.startAt);
- let e=prompt("終了(例:2026-05-02T11:00)",l.endAt||"");
- if(s && e && new Date(e)>=new Date(s)){
-   l.startAt=s;
-   l.endAt=e;
-   save();render();
- }else{
-   alert("時間が不正");
- }
+// ▼日付移動
+function prevDay(){current.setDate(current.getDate()-1);render();}
+function nextDay(){current.setDate(current.getDate()+1);render();}
+
+// ▼Evernote共有
+function exportEvernote(){
+ let text=fmtDate(current)+"のログ\n\n";
+ logs.filter(l=>l.startAt.slice(0,10)===current.toISOString().slice(0,10))
+ .forEach(l=>{
+  text+=`${l.icon} ${l.title}\n${duration(l.startAt,l.endAt)}\n${l.memo||""}\n\n`;
+ });
+
+ prompt("コピーしてEvernoteへ",text);
 }
 
-// ▼カテゴリ
-function addCategory(){
- let name=prompt("カテゴリ名");
- let icon=prompt("アイコン(絵文字)");
- if(name){
-  categories.push({name,icon});
-  save();render();
- }
-}
-
-// ▼設定
-function openSettings(){
- addCategory();
-}
-
-// ▼グラフ
+// ▼グラフ（修正済）
 function openChart(){
- let ctx=document.getElementById("chart").getContext("2d");
+ let ctx=chart.getContext("2d");
  ctx.clearRect(0,0,300,300);
 
  let data={};
- logs.forEach(l=>{
-  if(l.endAt){
-   let m=Math.ceil((new Date(l.endAt)-new Date(l.startAt))/60000);
-   data[l.title]=(data[l.title]||0)+m;
-  }
+ logs.filter(l=>l.endAt).forEach(l=>{
+  let m=Math.ceil((new Date(l.endAt)-new Date(l.startAt))/60000);
+  data[l.title]=(data[l.title]||0)+m;
  });
 
  let total=Object.values(data).reduce((a,b)=>a+b,0);
  let start=0;
 
  Object.keys(data).forEach(k=>{
-  let val=data[k]/total*2*Math.PI;
+  let val=(data[k]/total)*2*Math.PI;
   ctx.beginPath();
   ctx.moveTo(150,150);
   ctx.arc(150,150,100,start,start+val);
@@ -131,100 +115,42 @@ function openChart(){
  });
 }
 
-// ▼カレンダー
-function renderCalendar(){
- let cal=document.getElementById("calendar");
- cal.innerHTML="";
-
- let d=new Date(viewMonth.getFullYear(),viewMonth.getMonth(),1);
- let start=d.getDay();
-
- for(let i=0;i<start;i++) cal.appendChild(document.createElement("div"));
-
- let days=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,0).getDate();
-
- for(let i=1;i<=days;i++){
-  let el=document.createElement("div");
-  el.className="day";
-  el.innerText=i;
-  el.onclick=()=>{
-    currentDate=new Date(viewMonth.getFullYear(),viewMonth.getMonth(),i);
-    render();
-  };
-  cal.appendChild(el);
- }
-}
-
-function prevMonth(){
- viewMonth.setMonth(viewMonth.getMonth()-1);
- renderCalendar();
-}
-function nextMonth(){
- viewMonth.setMonth(viewMonth.getMonth()+1);
- renderCalendar();
-}
-
 // ▼描画
 function render(){
- document.getElementById("dateLabel").innerText=formatDate(currentDate);
+ dateLabel.innerText=fmtDate(current);
 
- // ボタン
- let b=document.getElementById("buttons");
- b.innerHTML="";
- categories.forEach(c=>{
+ // カテゴリ
+ buttons.innerHTML="";
+ cats.forEach(c=>{
   let el=document.createElement("div");
   el.className="btn";
   el.innerHTML=`${c.icon}<br>${c.name}`;
   el.onclick=()=>startLog(c);
-  b.appendChild(el);
+  buttons.appendChild(el);
  });
 
  // ログ
- let list=document.getElementById("list");
  list.innerHTML="";
-
- logs.filter(l=>l.startAt.slice(0,10)===formatDate(currentDate))
-  .forEach(l=>{
-   let el=document.createElement("div");
-   el.className="item";
-
-   el.innerHTML=`
-    ${l.icon} ${l.title}<br>
-    ${duration(l.startAt,l.endAt)}
-    <br><button onclick="endLog(${l.id})">終了</button>
-    <button onclick="editTime(${l.id})">時間編集</button>
-    <textarea placeholder="メモ" onchange="saveMemo(${l.id},this.value)">${l.memo||""}</textarea>
-    <input type="file" accept="image/*" onchange="uploadImg(${l.id},this)">
-    ${l.img?`<img src="${l.img}" width="100%">`:""}
-   `;
-   list.appendChild(el);
-  });
-
- renderCalendar();
+ logs.filter(l=>l.startAt.slice(0,10)===current.toISOString().slice(0,10))
+ .forEach(l=>{
+  let el=document.createElement("div");
+  el.className="item";
+  el.innerHTML=`
+   ${l.icon} ${l.title}<br>
+   ${duration(l.startAt,l.endAt)}
+   <br><button onclick="endLog(${l.id})">終了</button>
+   <textarea onchange="saveMemo(${l.id},this.value)">${l.memo||""}</textarea>
+  `;
+  list.appendChild(el);
+ });
 }
 
-// ▼メモ
 function saveMemo(id,val){
  let l=logs.find(x=>x.id===id);
- l.memo=val;
- save();
+ l.memo=val;save();
 }
 
-// ▼画像
-function uploadImg(id,input){
- let file=input.files[0];
- let reader=new FileReader();
- reader.onload=e=>{
-  let l=logs.find(x=>x.id===id);
-  l.img=e.target.result;
-  save();render();
- };
- reader.readAsDataURL(file);
-}
-
-// 初期描画
 render();
-
 </script>
 
 </body>
