@@ -13,99 +13,122 @@ body{margin:0;background:#000;color:#fff;font-family:-apple-system;}
 .item{padding:10px;border-bottom:1px solid #222;}
 input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;}
 canvas{max-width:300px;margin:10px auto;display:block;}
-.calendar{display:grid;grid-template-columns:repeat(7,1fr);}
-.day{padding:6px;text-align:center;background:#111;margin:2px;}
 </style>
 </head>
 
 <body>
 
 <div class="header">
-  <span id="dateLabel"></span>
-  <div>
-    <button onclick="prevDay()">◀</button>
-    <button onclick="nextDay()">▶</button>
-    <button onclick="exportEvernote()">共有</button>
-    <button onclick="openChart()">📊</button>
-  </div>
+<span id="dateLabel"></span>
+<div>
+<button onclick="prevDay()">◀</button>
+<button onclick="nextDay()">▶</button>
+<button onclick="share()">共有</button>
+<button onclick="chart()">📊</button>
+</div>
 </div>
 
 <div class="grid" id="buttons"></div>
 <div id="list"></div>
-
-<canvas id="chart" width="300" height="300"></canvas>
-<div id="calendar" class="calendar"></div>
+<canvas id="chartCanvas" width="300" height="300"></canvas>
 
 <script>
 
 // ▼データ
 let logs=JSON.parse(localStorage.getItem("logs")||"[]");
-let cats=JSON.parse(localStorage.getItem("cats")||'[{"name":"仕事","icon":"💼"},{"name":"食事","icon":"🍽️"}]');
+let cats=[{name:"仕事",icon:"💼"},{name:"食事",icon:"🍽️"}];
 let current=new Date();
 
 // ▼保存
-function save(){
- localStorage.setItem("logs",JSON.stringify(logs));
- localStorage.setItem("cats",JSON.stringify(cats));
-}
+function save(){localStorage.setItem("logs",JSON.stringify(logs));}
 
 // ▼日付
-function fmtDate(d){
- let w=["日","月","火","水","木","金","土"][d.getDay()];
- return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}(${w})`;
-}
+function dstr(d){return d.toISOString().slice(0,10);}
 
 // ▼時間
-function duration(s,e){
+function dur(s,e){
  if(!e)return "";
  let m=Math.ceil((new Date(e)-new Date(s))/60000);
- let h=Math.floor(m/60);
- let mm=m%60;
+ let h=Math.floor(m/60),mm=m%60;
  return h?`（${h}時間${mm}分）`:`（${mm}分）`;
 }
 
 // ▼ログ
-function startLog(c){
- logs.unshift({id:Date.now(),title:c.name,icon:c.icon,startAt:new Date().toISOString(),endAt:null,memo:""});
+function start(c){
+ logs.unshift({id:Date.now(),title:c.name,icon:c.icon,start:new Date().toISOString(),end:null,memo:"",img:""});
  save();render();
 }
-function endLog(id){
+function end(id){
  let l=logs.find(x=>x.id===id);
- l.endAt=new Date().toISOString();
+ l.end=new Date().toISOString();
  save();render();
 }
 
-// ▼日付移動
+// ▼時間編集（修正）
+function edit(id){
+ let l=logs.find(x=>x.id===id);
+
+ let s=prompt("開始 YYYY-MM-DDTHH:MM",l.start);
+ let e=prompt("終了 YYYY-MM-DDTHH:MM",l.end||"");
+
+ if(!s||!e)return;
+
+ if(new Date(e)<new Date(s)){
+  alert("時間逆転");
+  return;
+ }
+
+ l.start=s;
+ l.end=e;
+ save();render();
+}
+
+// ▼日付
 function prevDay(){current.setDate(current.getDate()-1);render();}
 function nextDay(){current.setDate(current.getDate()+1);render();}
 
-// ▼Evernote共有
-function exportEvernote(){
- let text=fmtDate(current)+"のログ\n\n";
- logs.filter(l=>l.startAt.slice(0,10)===current.toISOString().slice(0,10))
- .forEach(l=>{
-  text+=`${l.icon} ${l.title}\n${duration(l.startAt,l.endAt)}\n${l.memo||""}\n\n`;
+// ▼共有（確実動作）
+function share(){
+ let txt=dstr(current)+"のログ\n\n";
+ logs.filter(l=>l.start.slice(0,10)===dstr(current)).forEach(l=>{
+  txt+=`${l.icon} ${l.title}\n${dur(l.start,l.end)}\n${l.memo||""}\n\n`;
  });
 
- prompt("コピーしてEvernoteへ",text);
+ navigator.clipboard.writeText(txt)
+ .then(()=>alert("コピーしました"))
+ .catch(()=>prompt("コピーしてください",txt));
 }
 
-// ▼グラフ（修正済）
-function openChart(){
- let ctx=chart.getContext("2d");
+// ▼画像（修正）
+function imgUpload(id,input){
+ let f=input.files[0];
+ if(!f)return;
+ let r=new FileReader();
+ r.onload=e=>{
+  let l=logs.find(x=>x.id===id);
+  l.img=e.target.result;
+  save();render();
+ };
+ r.readAsDataURL(f);
+}
+
+// ▼グラフ（修正）
+function chart(){
+ let ctx=chartCanvas.getContext("2d");
  ctx.clearRect(0,0,300,300);
 
- let data={};
- logs.filter(l=>l.endAt).forEach(l=>{
-  let m=Math.ceil((new Date(l.endAt)-new Date(l.startAt))/60000);
-  data[l.title]=(data[l.title]||0)+m;
+ let map={};
+ logs.filter(l=>l.end && l.start.slice(0,10)===dstr(current)).forEach(l=>{
+  let m=Math.ceil((new Date(l.end)-new Date(l.start))/60000);
+  map[l.title]=(map[l.title]||0)+m;
  });
 
- let total=Object.values(data).reduce((a,b)=>a+b,0);
- let start=0;
+ let total=Object.values(map).reduce((a,b)=>a+b,0);
+ if(!total)return;
 
- Object.keys(data).forEach(k=>{
-  let val=(data[k]/total)*2*Math.PI;
+ let start=0;
+ Object.keys(map).forEach(k=>{
+  let val=map[k]/total*2*Math.PI;
   ctx.beginPath();
   ctx.moveTo(150,150);
   ctx.arc(150,150,100,start,start+val);
@@ -117,41 +140,44 @@ function openChart(){
 
 // ▼描画
 function render(){
- dateLabel.innerText=fmtDate(current);
+ dateLabel.innerText=dstr(current);
 
- // カテゴリ
  buttons.innerHTML="";
  cats.forEach(c=>{
   let el=document.createElement("div");
   el.className="btn";
   el.innerHTML=`${c.icon}<br>${c.name}`;
-  el.onclick=()=>startLog(c);
+  el.onclick=()=>start(c);
   buttons.appendChild(el);
  });
 
- // ログ
  list.innerHTML="";
- logs.filter(l=>l.startAt.slice(0,10)===current.toISOString().slice(0,10))
- .forEach(l=>{
+ logs.filter(l=>l.start.slice(0,10)===dstr(current)).forEach(l=>{
   let el=document.createElement("div");
   el.className="item";
+
   el.innerHTML=`
    ${l.icon} ${l.title}<br>
-   ${duration(l.startAt,l.endAt)}
-   <br><button onclick="endLog(${l.id})">終了</button>
-   <textarea onchange="saveMemo(${l.id},this.value)">${l.memo||""}</textarea>
+   ${dur(l.start,l.end)}
+   <br><button onclick="end(${l.id})">終了</button>
+   <button onclick="edit(${l.id})">時間編集</button>
+   <textarea onchange="memo(${l.id},this.value)">${l.memo||""}</textarea>
+   <input type="file" accept="image/*" onchange="imgUpload(${l.id},this)">
+   ${l.img?`<img src="${l.img}" width="100%">`:""}
   `;
+
   list.appendChild(el);
  });
 }
 
-function saveMemo(id,val){
+function memo(id,val){
  let l=logs.find(x=>x.id===id);
- l.memo=val;save();
+ l.memo=val;
+ save();
 }
 
 render();
-</script>
 
+</script>
 </body>
 </html>
