@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000">
+
+<title>LifeLog</title>
+
+<style>
+body {margin:0;background:#000;color:#fff;font-family:-apple-system;}
+.header {display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #222;}
+.grid {display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px;}
+.btn {background:#111;padding:10px;text-align:center;border-radius:10px;}
+.item {padding:10px;border-bottom:1px solid #222;}
+.time {color:#aaa;font-size:12px;}
+canvas {width:100%;max-width:300px;}
+.calendar {display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.dayCell {padding:6px;text-align:center;background:#111;}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <span id="dateLabel"></span>
+  <div>
+    <button onclick="openCalendar()">📅</button>
+    <button onclick="exportDay()">共有</button>
+    <button onclick="openChart()">📊</button>
+  </div>
+</div>
+
+<div class="grid" id="buttons"></div>
+<div id="list"></div>
+
+<canvas id="chart"></canvas>
+
+<div id="calendar"></div>
+
+<script>
+
+// ▼データ
+let logs = JSON.parse(localStorage.getItem("logs")||"[]");
+let categories = [{name:"仕事",icon:"💼"},{name:"食事",icon:"🍽️"}];
+let currentDate = new Date().toISOString().slice(0,10);
+
+// ▼日付
+function formatJP(d){
+  let dt=new Date(d);
+  let w=["日","月","火","水","木","金","土"][dt.getDay()];
+  return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getDate()).padStart(2,"0")}(${w})`;
+}
+
+// ▼時間丸め（切り上げ）
+function duration(s,e){
+  if(!e)return "";
+  let m=(new Date(e)-new Date(s))/60000;
+  m=Math.ceil(m);
+  let h=Math.floor(m/60);
+  let mm=m%60;
+  return h>0?`（${h}時間${mm}分）`:`（${mm}分）`;
+}
+
+// ▼ログ
+function startLog(c){
+  logs.unshift({id:Date.now(),title:c.name,icon:c.icon,startAt:new Date().toISOString(),endAt:null});
+  save();render();
+}
+function endLog(id){
+  let l=logs.find(x=>x.id===id);
+  l.endAt=new Date().toISOString();
+  save();render();
+}
+function save(){localStorage.setItem("logs",JSON.stringify(logs));}
+
+// ▼共有（確実動作）
+function exportDay(){
+  let text=formatJP(currentDate)+"のログ\n\n";
+  logs.filter(l=>l.startAt.slice(0,10)===currentDate)
+    .forEach(l=>{
+      text+=`${l.icon} ${l.title}\n${duration(l.startAt,l.endAt)}\n\n`;
+    });
+
+  prompt("コピーしてEvernoteへ",text);
+}
+
+// ▼カレンダー（月）
+function openCalendar(){
+  let cal=document.getElementById("calendar");
+  cal.innerHTML="";
+  cal.className="calendar";
+
+  let d=new Date(currentDate);
+  d.setDate(1);
+
+  let start=d.getDay();
+  for(let i=0;i<start;i++){
+    cal.appendChild(document.createElement("div"));
+  }
+
+  let days=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+
+  for(let i=1;i<=days;i++){
+    let el=document.createElement("div");
+    el.className="dayCell";
+    el.innerText=i;
+    el.onclick=()=>{
+      currentDate=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(i).padStart(2,"0");
+      render();
+    };
+    cal.appendChild(el);
+  }
+}
+
+// ▼円グラフ
+function openChart(){
+  let ctx=document.getElementById("chart").getContext("2d");
+  ctx.clearRect(0,0,300,300);
+
+  let map={};
+  logs.filter(l=>l.startAt.slice(0,10)===currentDate && l.endAt)
+    .forEach(l=>{
+      let m=Math.ceil((new Date(l.endAt)-new Date(l.startAt))/60000);
+      map[l.title]=(map[l.title]||0)+m;
+    });
+
+  let total=Object.values(map).reduce((a,b)=>a+b,0);
+  let start=0;
+
+  Object.keys(map).forEach(k=>{
+    let val=map[k]/total*2*Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(150,150);
+    ctx.arc(150,150,100,start,start+val);
+    ctx.fillStyle="#"+Math.floor(Math.random()*16777215).toString(16);
+    ctx.fill();
+    start+=val;
+  });
+}
+
+// ▼描画
+function render(){
+  document.getElementById("dateLabel").innerText=formatJP(currentDate);
+
+  let btn=document.getElementById("buttons");
+  btn.innerHTML="";
+  categories.forEach(c=>{
+    let el=document.createElement("div");
+    el.className="btn";
+    el.innerHTML=`${c.icon}<br>${c.name}`;
+    el.onclick=()=>startLog(c);
+    btn.appendChild(el);
+  });
+
+  let list=document.getElementById("list");
+  list.innerHTML="";
+
+  logs.filter(l=>l.startAt.slice(0,10)===currentDate)
+    .forEach(l=>{
+      let el=document.createElement("div");
+      el.className="item";
+      el.innerHTML=`
+        ${l.icon} ${l.title}<br>
+        <span class="time">${duration(l.startAt,l.endAt)}</span>
+        <br><button onclick="endLog(${l.id})">終了</button>
+      `;
+      list.appendChild(el);
+    });
+}
+
+render();
+
+// ▼PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+
+</body>
+</html>
