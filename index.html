@@ -11,7 +11,6 @@ body{margin:0;background:#000;color:#fff;font-family:-apple-system;}
 .btn{padding:10px;margin:5px;background:#111;border-radius:8px;}
 .item{border-bottom:1px solid #333;padding:10px;}
 input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;border:1px solid #333;}
-img.icon{width:24px;height:24px;vertical-align:middle;}
 </style>
 </head>
 
@@ -26,50 +25,31 @@ img.icon{width:24px;height:24px;vertical-align:middle;}
   </div>
 </div>
 
-<div id="buttons"></div>
-
-<div style="padding:10px;">
-  <button onclick="addCategory()">＋カテゴリ追加</button>
+<div>
+  <button class="btn" onclick="startLog('仕事','💼')">💼仕事</button>
+  <button class="btn" onclick="startLog('食事','🍽️')">🍽️食事</button>
 </div>
 
 <div id="list"></div>
 
 <script>
 
-// ▼データ
 let logs = JSON.parse(localStorage.getItem("logs") || "[]");
-let cats = JSON.parse(localStorage.getItem("cats") || `[
-  {"name":"仕事","icon":"💼"},
-  {"name":"食事","icon":"🍽️"}
-]`);
-
 let currentDate = new Date();
 
-// ▼保存
 function save(){
   localStorage.setItem("logs", JSON.stringify(logs));
-  localStorage.setItem("cats", JSON.stringify(cats));
 }
 
-// ▼日付
-function formatJP(date){
-  let d=new Date(date);
-  let w=["日","月","火","水","木","金","土"][d.getDay()];
-  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}(${w})`;
-}
-
-// ▼時間
 function formatHM(date){
   let d=new Date(date);
   return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 }
 
-// ▼日付キー
 function dateKey(d){
   return new Date(d).toISOString().slice(0,10);
 }
 
-// ▼所要時間
 function duration(s,e){
   if(!e) return "";
   let m=Math.ceil((new Date(e)-new Date(s))/60000);
@@ -78,121 +58,58 @@ function duration(s,e){
   return h?`${h}時間${mm}分`:`${mm}分`;
 }
 
-// ▼アイコン表示
-function iconHTML(icon){
-  if(icon.startsWith("http")){
-    return `<img src="${icon}" class="icon">`;
-  }
-  return icon;
-}
-
-// ▼ログ開始
-function startLog(c){
+function startLog(title,icon){
   logs.unshift({
     id:Date.now(),
-    title:c.name,
-    icon:c.icon,
+    title,
+    icon,
     start:new Date().toISOString(),
     end:null,
-    memo:"",
-    img:""
+    memo:""
   });
   save(); render();
 }
 
-// ▼終了
 function endLog(id){
   let l=logs.find(x=>x.id===id);
   l.end=new Date().toISOString();
   save(); render();
 }
 
-// ▼時間変更（入力UI）
-function editTime(id){
-  let l=logs.find(x=>x.id===id);
-
-  let s=prompt("開始（例 2026-05-02T20:00）", l.start);
-  let e=prompt("終了（例 2026-05-02T21:00）", l.end||"");
-
-  if(!s||!e) return;
-  if(new Date(e)<new Date(s)){
-    alert("終了時間が開始より前です");
-    return;
-  }
-
-  l.start=s;
-  l.end=e;
+function deleteLog(id){
+  logs = logs.filter(x=>x.id!==id);
   save(); render();
 }
 
-// ▼メモ
+function prevDay(){currentDate.setDate(currentDate.getDate()-1); render();}
+function nextDay(){currentDate.setDate(currentDate.getDate()+1); render();}
+
+function share(){
+  let text="ログ\n\n";
+
+  logs.filter(l=>dateKey(l.start)===dateKey(currentDate))
+  .forEach(l=>{
+    text+=`${l.title}\n`;
+    text+=`${formatHM(l.start)}～${l.end?formatHM(l.end):""}\n`;
+    text+=`${l.end?"（"+duration(l.start,l.end)+"）":""}\n`;
+    text+=`${l.memo||""}\n\n`;
+  });
+
+  if(navigator.share){
+    navigator.share({text});
+  }else{
+    prompt("コピー",text);
+  }
+}
+
 function saveMemo(id,val){
   let l=logs.find(x=>x.id===id);
   l.memo=val;
   save();
 }
 
-// ▼画像
-function uploadImg(id,input){
-  let file=input.files[0];
-  if(!file) return;
-
-  let reader=new FileReader();
-  reader.onload=e=>{
-    let l=logs.find(x=>x.id===id);
-    l.img=e.target.result;
-    save(); render();
-  };
-  reader.readAsDataURL(file);
-}
-
-// ▼カテゴリ追加
-function addCategory(){
-  let name=prompt("カテゴリ名");
-  let icon=prompt("アイコン（絵文字 or 画像URL）");
-
-  if(!name) return;
-
-  cats.push({name,icon});
-  save(); render();
-}
-
-// ▼日付移動
-function prevDay(){currentDate.setDate(currentDate.getDate()-1); render();}
-function nextDay(){currentDate.setDate(currentDate.getDate()+1); render();}
-
-// ▼共有
-function share(){
-  let title=formatJP(currentDate)+"のログ";
-  let text=title+"\n\n";
-
-  logs.filter(l=>dateKey(l.start)===dateKey(currentDate))
-  .forEach(l=>{
-    text+=`${l.title}\n`;
-    text+=`${formatHM(l.start)}～${l.end?formatHM(l.end):""}\n`;
-    text+=`${l.end?duration(l.start,l.end):""}\n\n`;
-  });
-
-  if(navigator.share){
-    navigator.share({title,text});
-  }else{
-    prompt("コピー",text);
-  }
-}
-
-// ▼描画
 function render(){
-  document.getElementById("dateLabel").innerText=formatJP(currentDate);
-
-  let btns=document.getElementById("buttons");
-  btns.innerHTML="";
-  cats.forEach(c=>{
-    let b=document.createElement("button");
-    b.className="btn";
-    b.innerHTML=`${iconHTML(c.icon)} ${c.name}`;
-    b.onclick=()=>startLog(c);
-    btns.appendChild(b);
-  });
+  document.getElementById("dateLabel").innerText = currentDate.toISOString().slice(0,10);
 
   let list=document.getElementById("list");
   list.innerHTML="";
@@ -203,15 +120,13 @@ function render(){
     el.className="item";
 
     el.innerHTML=`
-      ${iconHTML(l.icon)} ${l.title}<br>
+      ${l.icon} ${l.title}<br>
       ${formatHM(l.start)}～${l.end?formatHM(l.end):""}
       ${l.end?`（${duration(l.start,l.end)}）`:""}
       <br>
       <button onclick="endLog(${l.id})">終了</button>
-      <button onclick="editTime(${l.id})">時間変更</button>
-      <textarea onchange="saveMemo(${l.id},this.value)" placeholder="メモ">${l.memo||""}</textarea>
-      <input type="file" accept="image/*" onchange="uploadImg(${l.id},this)">
-      ${l.img?`<img src="${l.img}" width="100%">`:""}
+      <button onclick="deleteLog(${l.id})">削除</button>
+      <textarea onchange="saveMemo(${l.id},this.value)">${l.memo||""}</textarea>
     `;
 
     list.appendChild(el);
@@ -221,5 +136,6 @@ function render(){
 render();
 
 </script>
+
 </body>
 </html>
