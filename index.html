@@ -11,6 +11,7 @@ body{margin:0;background:#000;color:#fff;font-family:-apple-system;}
 .btn{padding:10px;margin:5px;background:#111;border-radius:8px;}
 .item{border-bottom:1px solid #333;padding:10px;}
 input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;border:1px solid #333;}
+img.icon{width:20px;height:20px;vertical-align:middle;}
 </style>
 </head>
 
@@ -25,9 +26,10 @@ input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;border:1px s
   </div>
 </div>
 
-<div>
-  <button class="btn" onclick="startLog('仕事','💼')">💼仕事</button>
-  <button class="btn" onclick="startLog('食事','🍽️')">🍽️食事</button>
+<div id="buttons"></div>
+
+<div style="padding:10px;">
+  <button onclick="addCategory()">＋カテゴリ追加</button>
 </div>
 
 <div id="list"></div>
@@ -35,10 +37,12 @@ input,textarea{width:100%;margin-top:5px;background:#111;color:#fff;border:1px s
 <script>
 
 let logs = JSON.parse(localStorage.getItem("logs") || "[]");
+let cats = JSON.parse(localStorage.getItem("cats") || '[{"name":"仕事","icon":"💼"},{"name":"食事","icon":"🍽️"}]');
 let currentDate = new Date();
 
 function save(){
   localStorage.setItem("logs", JSON.stringify(logs));
+  localStorage.setItem("cats", JSON.stringify(cats));
 }
 
 function formatHM(date){
@@ -51,22 +55,23 @@ function dateKey(d){
 }
 
 function duration(s,e){
-  if(!e) return "";
+  if(!e)return "";
   let m=Math.ceil((new Date(e)-new Date(s))/60000);
   let h=Math.floor(m/60);
   let mm=m%60;
   return h?`${h}時間${mm}分`:`${mm}分`;
 }
 
-function startLog(title,icon){
-  logs.unshift({
-    id:Date.now(),
-    title,
-    icon,
-    start:new Date().toISOString(),
-    end:null,
-    memo:""
-  });
+function iconHTML(icon){
+  if(icon && icon.startsWith("http")){
+    return `<img src="${icon}" class="icon">`;
+  }
+  return icon||"";
+}
+
+// ▼ログ
+function startLog(c){
+  logs.unshift({id:Date.now(),title:c.name,icon:c.icon,start:new Date().toISOString(),end:null,memo:"",img:""});
   save(); render();
 }
 
@@ -81,9 +86,65 @@ function deleteLog(id){
   save(); render();
 }
 
-function prevDay(){currentDate.setDate(currentDate.getDate()-1); render();}
-function nextDay(){currentDate.setDate(currentDate.getDate()+1); render();}
+// ▼時間変更（安定版）
+function editTime(id){
+  let l=logs.find(x=>x.id===id);
 
+  let s=prompt("開始（例 2026-05-02T20:00）", l.start);
+  let e=prompt("終了（例 2026-05-02T21:00）", l.end||"");
+
+  if(!s||!e)return;
+  if(new Date(e)<new Date(s)){
+    alert("時間が逆です");
+    return;
+  }
+
+  l.start=s;
+  l.end=e;
+  save(); render();
+}
+
+// ▼カテゴリ
+function addCategory(){
+  let name=prompt("カテゴリ名");
+  let icon=prompt("アイコン（絵文字 or 画像URL）");
+  if(!name)return;
+  cats.push({name,icon});
+  save(); render();
+}
+
+function deleteCategory(index){
+  if(!confirm("削除する？"))return;
+  cats.splice(index,1);
+  save(); render();
+}
+
+// ▼画像
+function uploadImg(id,input){
+  let file=input.files[0];
+  if(!file)return;
+
+  let reader=new FileReader();
+  reader.onload=e=>{
+    let l=logs.find(x=>x.id===id);
+    l.img=e.target.result;
+    save(); render();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ▼メモ
+function saveMemo(id,val){
+  let l=logs.find(x=>x.id===id);
+  l.memo=val;
+  save();
+}
+
+// ▼日付
+function prevDay(){currentDate.setDate(currentDate.getDate()-1);render();}
+function nextDay(){currentDate.setDate(currentDate.getDate()+1);render();}
+
+// ▼共有（Evernote対応）
 function share(){
   let text="ログ\n\n";
 
@@ -92,7 +153,13 @@ function share(){
     text+=`${l.title}\n`;
     text+=`${formatHM(l.start)}～${l.end?formatHM(l.end):""}\n`;
     text+=`${l.end?"（"+duration(l.start,l.end)+"）":""}\n`;
-    text+=`${l.memo||""}\n\n`;
+    text+=`${l.memo||""}\n`;
+
+    if(l.img){
+      text+=`${l.img}\n`;
+    }
+
+    text+="\n";
   });
 
   if(navigator.share){
@@ -102,15 +169,22 @@ function share(){
   }
 }
 
-function saveMemo(id,val){
-  let l=logs.find(x=>x.id===id);
-  l.memo=val;
-  save();
-}
-
+// ▼描画
 function render(){
   document.getElementById("dateLabel").innerText = currentDate.toISOString().slice(0,10);
 
+  // カテゴリ
+  let btns=document.getElementById("buttons");
+  btns.innerHTML="";
+  cats.forEach((c,i)=>{
+    let b=document.createElement("div");
+    b.className="btn";
+    b.innerHTML=`${iconHTML(c.icon)} ${c.name}<br><button onclick="deleteCategory(${i})">削除</button>`;
+    b.onclick=()=>startLog(c);
+    btns.appendChild(b);
+  });
+
+  // ログ
   let list=document.getElementById("list");
   list.innerHTML="";
 
@@ -120,13 +194,16 @@ function render(){
     el.className="item";
 
     el.innerHTML=`
-      ${l.icon} ${l.title}<br>
+      ${iconHTML(l.icon)} ${l.title}<br>
       ${formatHM(l.start)}～${l.end?formatHM(l.end):""}
       ${l.end?`（${duration(l.start,l.end)}）`:""}
       <br>
       <button onclick="endLog(${l.id})">終了</button>
+      <button onclick="editTime(${l.id})">時間変更</button>
       <button onclick="deleteLog(${l.id})">削除</button>
-      <textarea onchange="saveMemo(${l.id},this.value)">${l.memo||""}</textarea>
+      <textarea onchange="saveMemo(${l.id},this.value)" placeholder="メモ">${l.memo||""}</textarea>
+      <input type="file" accept="image/*" onchange="uploadImg(${l.id},this)">
+      ${l.img?`<img src="${l.img}" width="100%">`:""}
     `;
 
     list.appendChild(el);
@@ -136,6 +213,5 @@ function render(){
 render();
 
 </script>
-
 </body>
 </html>
